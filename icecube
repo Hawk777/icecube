@@ -351,7 +351,7 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
 	else:
 		assert method in ("POST", "PUT")
 
-	# Issue the request up to 5 times, handling broken pipe errors
+	# Issue the request up to 5 times, handling broken pipe errors and server-side AWS errors
 	retries = 5
 	while True:
 		try:
@@ -392,6 +392,12 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
 		except socket.error as exp:
 			if exp.errno == errno.EPIPE and retries > 0:
 				print("Broken pipe, retrying.")
+				retries -= 1
+			else:
+				raise
+		except AWSServerError as exp:
+			if retries > 0:
+				print("AWS server error ({}), retrying.".format(exp))
 				retries -= 1
 			else:
 				raise
