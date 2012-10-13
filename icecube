@@ -390,7 +390,7 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
 			finally:
 				conn.close()
 		except socket.error as exp:
-			if exp.errno == errno.EPIPE and retries > 0:
+			if retries > 0:
 				print("Broken pipe, retrying.")
 				retries -= 1
 			else:
