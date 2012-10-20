@@ -291,74 +291,75 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
 	"""
 	global debug
 
-	# Construct the URL
-	host = "glacier.{}.amazonaws.com".format(gi.region)
-	url = "http://{}{}?{}".format(host, path, urllib.parse.urlencode(query_params))
-
-	# Grab a timestamp
-	stamp = datetime.datetime.now(datetime.timezone.utc)
-
-	# Add the standard request headers used in all requests
-	headers = copy.copy(headers)
-	headers["date"] = stamp.strftime("%Y%m%dT%H%M%SZ")
-	headers["host"] = host
-	headers["x-amz-glacier-version"] = "2012-06-01"
-	if body is not None:
-		headers["content-length"] = str(len(body))
-
-	# Construct the canonical query string (used in signature generation but not the request URL)
-	# This is unusual in that it uses %20 for spaces instead of +, so we must join the parameters manually instead of using urllib.parse.urlencode
-	canonical_query_string = "&".join(["{}={}".format(k, urllib.parse.quote(query_params[k], safe="~")) for k in sorted(query_params.keys())])
-
-	# Construct the body hash if not provided externally
-	if body_hash is None:
-		body_hash = hashlib.sha256(body if body is not None else B"").digest()
-	
-	# Construct the canonical request string
-	header_names = sorted(headers.keys())
-	header_strings = ["{}:{}".format(k, headers[k]) for k in header_names]
-	canonical_request = "{}\n{}\n{}\n{}\n\n{}\n{}".format(method, path, canonical_query_string, "\n".join(header_strings), ";".join(header_names), to_hex_digest(body_hash))
-	if debug:
-		print("=== BEGIN CANONICAL REQUEST ===")
-		print(canonical_request)
-		print("=== END CANONICAL REQUEST ===")
-
-	# Construct the string to sign
-	credential_scope = "{}/{}/glacier/aws4_request".format(stamp.strftime("%Y%m%d"), gi.region)
-	string_to_sign = "\n".join(["AWS4-HMAC-SHA256", stamp.strftime("%Y%m%dT%H%M%SZ"), credential_scope, hashlib.sha256(canonical_request.encode("UTF-8")).hexdigest()])
-
-	# Derive the signing key
-	date_key = hmac.new(B"AWS4" + gi.secret_access_key.encode("UTF-8"), stamp.strftime("%Y%m%d").encode("UTF-8"), hashlib.sha256).digest()
-	region_key = hmac.new(date_key, gi.region.encode("UTF-8"), hashlib.sha256).digest()
-	service_key = hmac.new(region_key, B"glacier", hashlib.sha256).digest()
-	signing_key = hmac.new(service_key, B"aws4_request", hashlib.sha256).digest()
-
-	# Sign the string and generate the Authorization header
-	signature = hmac.new(signing_key, string_to_sign.encode("UTF-8"), hashlib.sha256).hexdigest()
-	credential = "{}/{}".format(gi.access_key, credential_scope)
-	headers["authorization"] = "AWS4-HMAC-SHA256 Credential={},SignedHeaders={},Signature={}".format(credential, ";".join(header_names), signature)
-
-	# Combine all the headers
-	if debug:
-		print("=== BEGIN HEADERS ===")
-		for k, v in headers.items():
-			print("{}: {}".format(k, v))
-		print("=== END HEADERS ===")
-
-	# Sanity-check method vs. body
-	if body is None:
-		assert method in ("GET", "DELETE")
-	else:
-		assert method in ("POST", "PUT")
-
 	# Issue the request up to 5 times, handling broken pipe errors and server-side AWS errors
 	retries = 5
 	while True:
 		try:
+			# Construct the URL
+			host = "glacier.{}.amazonaws.com".format(gi.region)
+			url = "http://{}{}?{}".format(host, path, urllib.parse.urlencode(query_params))
+
+			# Grab a timestamp
+			stamp = datetime.datetime.now(datetime.timezone.utc)
+
+			# Add the standard request headers used in all requests
+			all_headers = copy.copy(headers)
+			all_headers["date"] = stamp.strftime("%Y%m%dT%H%M%SZ")
+			all_headers["host"] = host
+			all_headers["x-amz-glacier-version"] = "2012-06-01"
+			if body is not None:
+				all_headers["content-length"] = str(len(body))
+
+			# Construct the canonical query string (used in signature generation but not the request URL)
+			# This is unusual in that it uses %20 for spaces instead of +, so we must join the parameters manually instead of using urllib.parse.urlencode
+			canonical_query_string = "&".join(["{}={}".format(k, urllib.parse.quote(query_params[k], safe="~")) for k in sorted(query_params.keys())])
+
+			# Construct the body hash if not provided externally
+			if body_hash is None:
+				body_hash = hashlib.sha256(body if body is not None else B"").digest()
+			
+			# Construct the canonical request string
+			header_names = sorted(all_headers.keys())
+			header_strings = ["{}:{}".format(k, all_headers[k]) for k in header_names]
+			canonical_request = "{}\n{}\n{}\n{}\n\n{}\n{}".format(method, path, canonical_query_string, "\n".join(header_strings), ";".join(header_names), to_hex_digest(body_hash))
+			if debug:
+				print("=== BEGIN CANONICAL REQUEST ===")
+				print(canonical_request)
+				print("=== END CANONICAL REQUEST ===")
+
+			# Construct the string to sign
+			credential_scope = "{}/{}/glacier/aws4_request".format(stamp.strftime("%Y%m%d"), gi.region)
+			string_to_sign = "\n".join(["AWS4-HMAC-SHA256", stamp.strftime("%Y%m%dT%H%M%SZ"), credential_scope, hashlib.sha256(canonical_request.encode("UTF-8")).hexdigest()])
+
+			# Derive the signing key
+			date_key = hmac.new(B"AWS4" + gi.secret_access_key.encode("UTF-8"), stamp.strftime("%Y%m%d").encode("UTF-8"), hashlib.sha256).digest()
+			region_key = hmac.new(date_key, gi.region.encode("UTF-8"), hashlib.sha256).digest()
+			service_key = hmac.new(region_key, B"glacier", hashlib.sha256).digest()
+			signing_key = hmac.new(service_key, B"aws4_request", hashlib.sha256).digest()
+
+			# Sign the string and generate the Authorization header
+			signature = hmac.new(signing_key, string_to_sign.encode("UTF-8"), hashlib.sha256).hexdigest()
+			credential = "{}/{}".format(gi.access_key, credential_scope)
+			all_headers["authorization"] = "AWS4-HMAC-SHA256 Credential={},SignedHeaders={},Signature={}".format(credential, ";".join(header_names), signature)
+
+			# Combine all the headers
+			if debug:
+				print("=== BEGIN HEADERS ===")
+				for k, v in all_headers.items():
+					print("{}: {}".format(k, v))
+				print("=== END HEADERS ===")
+
+			# Sanity-check method vs. body
+			if body is None:
+				assert method in ("GET", "DELETE")
+			else:
+				assert method in ("POST", "PUT")
+
+			# Make the request
 			conn = http.client.HTTPConnection(host)
 			try:
 				conn.connect()
-				conn.request(method, url, body, headers)
+				conn.request(method, url, body, all_headers)
 				resp = conn.getresponse()
 				if debug:
 					print("=== BEGIN RESPONSE STATUS LINE ===")
