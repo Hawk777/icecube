@@ -506,7 +506,7 @@ def put_archive_stream(gi, vault_name, description, stream):
 
 def put_archive_single(gi, vault_name, description, data_source):
 	"""Uploads an archive using single-part operation."""
-	block, tree_hash = data_source.next()
+	block, tree_hash = data_source.__next__()
 	content_hash = hashlib.sha256(block).digest()
 	headers = {}
 	if description is not None:
