@@ -705,22 +705,30 @@ def get_job_output(gi, params):
 	"""Gets the output of a job."""
 	vault_name = params[0]
 	job_id = params[1]
-	with open(params[2], "w+b") as output_file:
+	with open(params[2], "wb") as output_file:
+		content_length = None
 		content_type = None
 		remote_tree_hash = None
 		local_tree_hash_parts = []
 		def response_headers_cb(headers):
-			nonlocal content_type, remote_tree_hash
+			nonlocal content_length, content_type, remote_tree_hash
 			for k, v in headers:
-				if k.lower() == "content-type":
+				if k.lower() == "content-length":
+					content_length = int(v)
+				elif k.lower() == "content-type":
 					content_type = v
 				elif k.lower() == "x-amz-sha256-tree-hash":
 					remote_tree_hash = v
 		def response_body_cb(block):
-			nonlocal output_file, local_tree_hash_parts
+			nonlocal content_length, output_file, local_tree_hash_parts
 			output_file.write(block)
 			local_tree_hash_parts.append(hashlib.sha256(block).digest())
-		issue_request(gi=gi, method="GET", path="/-/vaults/{}/jobs/{}/output".format(vault_name, job_id), response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
+			print("\rDownloaded {:n} / {:n} ({:.2%})".format(output_file.tell(), content_length, output_file.tell() / content_length), end="")
+			sys.stdout.flush()
+		try:
+			issue_request(gi=gi, method="GET", path="/-/vaults/{}/jobs/{}/output".format(vault_name, job_id), response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
+		finally:
+			print()
 		if content_type.lower() == "application/octet-stream":
 			local_tree_hash = to_hex_digest(collapse_tree_hash(local_tree_hash_parts))
 			if local_tree_hash != remote_tree_hash:
