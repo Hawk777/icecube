@@ -48,7 +48,7 @@ def usage():
 	print("  mkv <vault-name>: creates a new vault")
 	print("  rmv <vault-name>: deletes a vault, which must be empty and not have been written to since the last inventory")
 	print("  put <vault-name> <source-file> <archive-description> …: uploads one or more archives to a vault")
-	print("  rm <vault-name> <archive-id>: deletes an archive from a vault")
+	print("  rm <vault-name> <archive-id>…: deletes an archive from a vault")
 	print("  inv <vault-name> {CSV|JSON} <job-description>: starts a job to download a vault inventory")
 	print("  dl <vault-name> <archive-id> <job-description>: starts a job to download an archive")
 	print("  lsj <vault-name>: lists all jobs on a vault (brief)")
@@ -585,8 +585,8 @@ def put_archive_multi(gi, vault_name, description, data_source):
 def delete_archive(gi, params):
 	"""Deletes an archive from a vault."""
 	vault_name = params[0]
-	archive_id = params[1]
-	issue_request(gi=gi, method="DELETE", path="/-/vaults/{}/archives/{}".format(vault_name, archive_id))
+	for archive_id in params[1:]:
+		issue_request(gi=gi, method="DELETE", path="/-/vaults/{}/archives/{}".format(vault_name, archive_id))
 
 
 def start_inventory(gi, params):
@@ -744,7 +744,7 @@ operations = {
 	"mkv": (1, create_vault),
 	"rmv": (1, delete_vault),
 	"put": (-1, put_archive),
-	"rm": (2, delete_archive),
+	"rm": (-2, delete_archive),
 	"inv": (3, start_inventory),
 	"dl": (3, start_archive_download),
 	"lsj": (1, list_jobs_brief),
@@ -766,9 +766,12 @@ if operation in operations:
 	if op[0] >= 0:
 		if len(sys.argv) != 4 + op[0]:
 			usage()
+	elif operation == "rm":
+		if len(sys.argv) < (4 + 2):
+			usage()
 	elif operation == "put":
 		if len(sys.argv) < (4 + 3) or ((len(sys.argv) - 4 - 1) % 2) != 0:
-			usage();
+			usage()
 	gi.secret_access_key = getpass.getpass("Secret Access Key: ")
 	op[1](gi, sys.argv[4:])
 else:
