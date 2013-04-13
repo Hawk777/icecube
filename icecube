@@ -396,6 +396,12 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
 				retries -= 1
 			else:
 				raise
+		except socket.gaierror as exp:
+			if retries > 0:
+				print("Name lookup error, retrying.")
+				retries -= 1
+			else:
+				raise
 		except AWSServerError as exp:
 			if retries > 0:
 				print("AWS server error ({}), retrying.".format(exp))
