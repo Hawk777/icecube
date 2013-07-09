@@ -386,6 +386,7 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
 					response_body_cb = lambda x: None
 				while not resp.closed:
 					block = resp.read(1024 * 1024)
+					if len(block) == 0: break
 					response_body_cb(block)
 				return
 			finally:
