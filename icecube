@@ -409,7 +409,7 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
 				retries -= 1
 			else:
 				raise
-		except RequestTimeoutError as exp:
+		except RequestTimeoutException as exp:
 			if retries > 0:
 				print("AWS upload timeout error, retrying.")
 				retries -= 1
