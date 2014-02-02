@@ -52,7 +52,7 @@ def usage():
 	print("  inv <vault-name> {CSV|JSON} <job-description>: starts a job to download a vault inventory")
 	print("  dl <vault-name> <archive-id> <job-description>: starts a job to download an archive")
 	print("  lsj <vault-name>: lists all jobs on a vault (brief)")
-	print("  lsvj <vault-name>: lists all jobs on a vault (brief)")
+	print("  lsvj <vault-name>: lists all jobs on a vault (verbose)")
 	print("  getj <vault-name> <job-id> <output-file>: downloads the output of a job")
 	sys.exit(1)
 
@@ -533,7 +533,7 @@ def put_archive_single(gi, vault_name, description, data_source):
 			if k.lower() == "x-amz-archive-id":
 				archive_id = v
 	issue_request(gi=gi, method="POST", path="/-/vaults/{}/archives".format(vault_name), headers=headers, body=block, body_hash=content_hash, response_headers_cb=response_headers_cb)
-	print("Archive ID: {}".format(archive_id))
+	print("Archive ID for {}: {}".format(description, archive_id))
 
 
 def put_archive_multi(gi, vault_name, description, data_source):
@@ -592,7 +592,7 @@ def put_archive_multi(gi, vault_name, description, data_source):
 	finally:
 		print()
 	archive_id = complete_multipart_upload(multipart_upload_id, offset, collapse_tree_hash(tree_hashes))
-	print("Archive ID: {}".format(archive_id))
+	print("Archive ID for {}: {}".format(description, archive_id))
 
 
 def delete_archive(gi, params):
