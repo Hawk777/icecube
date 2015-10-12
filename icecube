@@ -393,25 +393,25 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
                 conn.close()
         except socket.error as exp:
             if retries > 0:
-                print("Broken pipe, retrying.")
+                print("Broken pipe, retrying.", flush=True)
                 retries -= 1
             else:
                 raise
         except socket.gaierror as exp:
             if retries > 0:
-                print("Name lookup error, retrying.")
+                print("Name lookup error, retrying.", flush=True)
                 retries -= 1
             else:
                 raise
         except AWSServerError as exp:
             if retries > 0:
-                print("AWS server error ({}), retrying.".format(exp))
+                print("AWS server error ({}), retrying.".format(exp), flush=True)
                 retries -= 1
             else:
                 raise
         except RequestTimeoutException as exp:
             if retries > 0:
-                print("AWS upload timeout error, retrying.")
+                print("AWS upload timeout error, retrying.", flush=True)
                 retries -= 1
             else:
                 raise
@@ -438,7 +438,7 @@ def list_vaults(gi, verbose):
             data += block
         issue_request(gi=gi, method="GET", path="/-/vaults", query_params=qp, response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
         if content_type != "application/json":
-            print("Bad content type: got \"{}\", expected application/json!".format(content_type))
+            print("Bad content type: got \"{}\", expected application/json!".format(content_type), flush=True)
             sys.exit(1)
         data = data.decode("UTF-8")
         if debug:
@@ -496,11 +496,11 @@ def put_archive(gi, params):
 
         # Open the source file and do the upload.
         if source_file_name == "-":
-            print("Uploading standard input…")
+            print("Uploading standard input…", flush=True)
             sys.stdin = sys.stdin.detach()
             put_archive_stream(gi, vault_name, description, sys.stdin)
         else:
-            print("Uploading file {}…".format(source_file_name))
+            print("Uploading file {}…".format(source_file_name), flush=True)
             with open(source_file_name, mode="rb") as source_file:
                 put_archive_stream(gi, vault_name, description, source_file)
 
@@ -510,7 +510,7 @@ def put_archive_stream(gi, vault_name, description, stream):
     global upload_part_size
     data_source = DataSource(stream, upload_part_size)
     if data_source.is_empty():
-        print("This file is empty. Empty archives are not supported.")
+        print("This file is empty. Empty archives are not supported.", flush=True)
     elif data_source.is_single_part():
         put_archive_single(gi, vault_name, description, data_source)
     else:
@@ -533,7 +533,7 @@ def put_archive_single(gi, vault_name, description, data_source):
             if k.lower() == "x-amz-archive-id":
                 archive_id = v
     issue_request(gi=gi, method="POST", path="/-/vaults/{}/archives".format(vault_name), headers=headers, body=block, body_hash=content_hash, response_headers_cb=response_headers_cb)
-    print("Archive ID for {}: {}".format(description, archive_id))
+    print("Archive ID for {}: {}".format(description, archive_id), flush=True)
 
 
 def put_archive_multi(gi, vault_name, description, data_source):
@@ -585,14 +585,14 @@ def put_archive_multi(gi, vault_name, description, data_source):
     try:
         for part, tree_hash in data_source:
             count += 1
-            print("\rUploading part {}...".format(count), end="")
+            print("\rUploading part {}...".format(count), end="", flush=True)
             upload_part(multipart_upload_id, offset, part, tree_hash)
             tree_hashes.append(tree_hash)
             offset += len(part)
     finally:
         print()
     archive_id = complete_multipart_upload(multipart_upload_id, offset, collapse_tree_hash(tree_hashes))
-    print("Archive ID for {}: {}".format(description, archive_id))
+    print("Archive ID for {}: {}".format(description, archive_id), flush=True)
 
 
 def delete_archive(gi, params):
@@ -736,7 +736,7 @@ def get_job_output(gi, params):
             nonlocal content_length, output_file, local_tree_hash_parts
             output_file.write(block)
             local_tree_hash_parts.append(hashlib.sha256(block).digest())
-            print("\rDownloaded {:n} / {:n} ({:.2%})".format(output_file.tell(), content_length, output_file.tell() / content_length), end="")
+            print("\rDownloaded {:n} / {:n} ({:.2%})".format(output_file.tell(), content_length, output_file.tell() / content_length), end="", flush=True)
             sys.stdout.flush()
         try:
             issue_request(gi=gi, method="GET", path="/-/vaults/{}/jobs/{}/output".format(vault_name, job_id), response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
