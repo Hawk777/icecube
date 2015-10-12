@@ -29,745 +29,745 @@ This must be a power-of-two multiple of one megabyte.
 
 
 def usage():
-	"""Displays usage information for the program."""
-	print("Usage:")
-	print(sys.argv[0] + " <region> <access-key-id> <operation> <parameters>")
-	print()
-	print("<region> is the Amazon Glacier region to talk to:")
-	print("  ap-northeast-1: Asia Pacific (Tokyo)")
-	print("  eu-west-1: EU (Ireland)")
-	print("  us-east-1: US East (North Virginia)")
-	print("  us-west-1: US West (Northern California)")
-	print("  us-west-2: US West (Oregon)")
-	print()
-	print("<access-key-id> is your access key ID (NOT secret access key!)")
-	print()
-	print("<operation> and <parameters> are one of:")
-	print("  lsv: lists all vaults (brief)")
-	print("  lsvl: lists all vaults (verbose)")
-	print("  mkv <vault-name>: creates a new vault")
-	print("  rmv <vault-name>: deletes a vault, which must be empty and not have been written to since the last inventory")
-	print("  put <vault-name> <source-file> <archive-description> …: uploads one or more archives to a vault")
-	print("  rm <vault-name> <archive-id>…: deletes an archive from a vault")
-	print("  inv <vault-name> {CSV|JSON} <job-description>: starts a job to download a vault inventory")
-	print("  dl <vault-name> <archive-id> <job-description>: starts a job to download an archive")
-	print("  lsj <vault-name>: lists all jobs on a vault (brief)")
-	print("  lsvj <vault-name>: lists all jobs on a vault (verbose)")
-	print("  getj <vault-name> <job-id> <output-file>: downloads the output of a job")
-	sys.exit(1)
+    """Displays usage information for the program."""
+    print("Usage:")
+    print(sys.argv[0] + " <region> <access-key-id> <operation> <parameters>")
+    print()
+    print("<region> is the Amazon Glacier region to talk to:")
+    print("  ap-northeast-1: Asia Pacific (Tokyo)")
+    print("  eu-west-1: EU (Ireland)")
+    print("  us-east-1: US East (North Virginia)")
+    print("  us-west-1: US West (Northern California)")
+    print("  us-west-2: US West (Oregon)")
+    print()
+    print("<access-key-id> is your access key ID (NOT secret access key!)")
+    print()
+    print("<operation> and <parameters> are one of:")
+    print("  lsv: lists all vaults (brief)")
+    print("  lsvl: lists all vaults (verbose)")
+    print("  mkv <vault-name>: creates a new vault")
+    print("  rmv <vault-name>: deletes a vault, which must be empty and not have been written to since the last inventory")
+    print("  put <vault-name> <source-file> <archive-description> …: uploads one or more archives to a vault")
+    print("  rm <vault-name> <archive-id>…: deletes an archive from a vault")
+    print("  inv <vault-name> {CSV|JSON} <job-description>: starts a job to download a vault inventory")
+    print("  dl <vault-name> <archive-id> <job-description>: starts a job to download an archive")
+    print("  lsj <vault-name>: lists all jobs on a vault (brief)")
+    print("  lsvj <vault-name>: lists all jobs on a vault (verbose)")
+    print("  getj <vault-name> <job-id> <output-file>: downloads the output of a job")
+    sys.exit(1)
 
 
 class GlobalInfo:
-	"""Stores global information about the operation. Populated elsewhere."""
-	pass
+    """Stores global information about the operation. Populated elsewhere."""
+    pass
 
 
 def to_hex_digest(h):
-	"""Converts a length-32 bytes object holding an SHA256 hash into its hexdigest form."""
-	return "".join("{:02x}".format(i) for i in h)
+    """Converts a length-32 bytes object holding an SHA256 hash into its hexdigest form."""
+    return "".join("{:02x}".format(i) for i in h)
 
 
 def collapse_tree_hash(hashes):
-	"""Collapses a list of length-32 bytes objects holding SHA256 hashes into a single hash, returned in binary form."""
-	result = []
-	prev = None
-	for cur in hashes:
-		if prev is None:
-			prev = cur
-		else:
-			result.append(hashlib.sha256(prev + cur).digest())
-			prev = None
-	if prev is not None:
-		result.append(prev)
-	if len(result) > 1:
-		return collapse_tree_hash(result)
-	else:
-		return result[0]
+    """Collapses a list of length-32 bytes objects holding SHA256 hashes into a single hash, returned in binary form."""
+    result = []
+    prev = None
+    for cur in hashes:
+        if prev is None:
+            prev = cur
+        else:
+            result.append(hashlib.sha256(prev + cur).digest())
+            prev = None
+    if prev is not None:
+        result.append(prev)
+    if len(result) > 1:
+        return collapse_tree_hash(result)
+    else:
+        return result[0]
 
 
 def compute_tree_hash(data):
-	"""Computes the tree hash of a bytes object."""
-	hashes = []
-	for i in range(0, len(data), 1024 * 1024):
-		block = data[i:(i + 1024 * 1024)]
-		hashes.append(hashlib.sha256(block).digest())
-	return collapse_tree_hash(hashes)
+    """Computes the tree hash of a bytes object."""
+    hashes = []
+    for i in range(0, len(data), 1024 * 1024):
+        block = data[i:(i + 1024 * 1024)]
+        hashes.append(hashlib.sha256(block).digest())
+    return collapse_tree_hash(hashes)
 
 
 class DataSource:
-	"""Manages reading data from a file for upload while also computing part hashes."""
-	def __init__(self, stream, part_size):
-		"""Constructs a new DataSource based on a file-like object and a part size."""
-		# Save arguments.
-		self._stream = stream
-		self._part_size = part_size
-		# Read up to the first two parts into an internal buffer.
-		self._buffer = []
-		for i in range(0, 2):
-			buf = stream.read(part_size)
-			if len(buf) > 0:
-				self._buffer.append(buf)
-		# Iff we were able to read a first part, then the file is not empty.
-		self._is_empty = len(self._buffer) < 1
-		# Iff we were able to read a second part, then the file is not single-part.
-		self._is_single_part = len(self._buffer) < 2
+    """Manages reading data from a file for upload while also computing part hashes."""
+    def __init__(self, stream, part_size):
+        """Constructs a new DataSource based on a file-like object and a part size."""
+        # Save arguments.
+        self._stream = stream
+        self._part_size = part_size
+        # Read up to the first two parts into an internal buffer.
+        self._buffer = []
+        for i in range(0, 2):
+            buf = stream.read(part_size)
+            if len(buf) > 0:
+                self._buffer.append(buf)
+        # Iff we were able to read a first part, then the file is not empty.
+        self._is_empty = len(self._buffer) < 1
+        # Iff we were able to read a second part, then the file is not single-part.
+        self._is_single_part = len(self._buffer) < 2
 
 
-	def is_empty(self):
-		"""Returns whether or not the data source is empty (length zero)."""
-		return self._is_empty
+    def is_empty(self):
+        """Returns whether or not the data source is empty (length zero)."""
+        return self._is_empty
 
 
-	def is_single_part(self):
-		"""Returns whether or not the data source is small enough to fit inside a single part."""
-		return self._is_single_part
+    def is_single_part(self):
+        """Returns whether or not the data source is small enough to fit inside a single part."""
+        return self._is_single_part
 
 
-	def __next__(self):
-		"""Returns a tuple of (part, tree_hash) the contents and tree hash (in binary form) of the next part."""
-		# Return data from the buffer first, then from the underlying stream.
-		if len(self._buffer) > 0:
-			part = self._buffer[0]
-			del self._buffer[0]
-		else:
-			part = self._stream.read(self._part_size)
-		if len(part) > 0:
-			return part, compute_tree_hash(part)
-		else:
-			raise StopIteration
+    def __next__(self):
+        """Returns a tuple of (part, tree_hash) the contents and tree hash (in binary form) of the next part."""
+        # Return data from the buffer first, then from the underlying stream.
+        if len(self._buffer) > 0:
+            part = self._buffer[0]
+            del self._buffer[0]
+        else:
+            part = self._stream.read(self._part_size)
+        if len(part) > 0:
+            return part, compute_tree_hash(part)
+        else:
+            raise StopIteration
 
 
-	def __iter__(self):
-		"""Returns an iterator over the data source."""
-		return self
+    def __iter__(self):
+        """Returns an iterator over the data source."""
+        return self
 
 
 class AWSError(Exception):
-	"""Raised in case of an error returned by AWS."""
-	def __init__(self, message):
-		self.message = message
+    """Raised in case of an error returned by AWS."""
+    def __init__(self, message):
+        self.message = message
 
-	def __str__(self):
-		return self.message
+    def __str__(self):
+        return self.message
 
 
 class AWSClientError(AWSError):
-	"""Raised for all errors caused by client misbehaviour."""
-	def __init__(self, message):
-		AWSError.__init__(self, message)
+    """Raised for all errors caused by client misbehaviour."""
+    def __init__(self, message):
+        AWSError.__init__(self, message)
 
 
 class AWSServerError(AWSError):
-	"""Raised for all errors caused by server misbehaviour."""
-	def __init__(self, message):
-		AWSError.__init__(self, message)
+    """Raised for all errors caused by server misbehaviour."""
+    def __init__(self, message):
+        AWSError.__init__(self, message)
 
 
 class AWSUnknownError(AWSError):
-	"""Raised for all errors where the system cannot determine whether responsibility lies with the client or the server."""
-	def __init__(self, message):
-		AWSError.__init__(self, message)
+    """Raised for all errors where the system cannot determine whether responsibility lies with the client or the server."""
+    def __init__(self, message):
+        AWSError.__init__(self, message)
 
 
 class AccessDeniedException(AWSClientError):
-	"""Raised if an Identity and Access Management policy denies access to the resource."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if an Identity and Access Management policy denies access to the resource."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class BadRequest(AWSClientError):
-	"""Raised if the request cannot be processed."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if the request cannot be processed."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class ExpiredTokenException(AWSClientError):
-	"""Raised if the security token used in the request has expired."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if the security token used in the request has expired."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class InvalidParameterValueException(AWSClientError):
-	"""Raised if a parameter of the request is incorrectly specified."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if a parameter of the request is incorrectly specified."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class InvalidSignatureException(AWSClientError):
-	"""Raised if the request signature is invalid."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if the request signature is invalid."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class LimitExceededException(AWSClientError):
-	"""Raised if the request results in a vault or account limit being exceeded."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if the request results in a vault or account limit being exceeded."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class MissingAuthenticationTokenException(AWSClientError):
-	"""Raised if no authentication data is found for the request."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if no authentication data is found for the request."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class MissingParameterValueException(AWSClientError):
-	"""Raised if a required header or parameter is missing from the request."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if a required header or parameter is missing from the request."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class ResourceNotFoundException(AWSClientError):
-	"""Raised if the specified resource such as a vault, upload ID, or job ID does not exist."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if the specified resource such as a vault, upload ID, or job ID does not exist."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class RequestTimeoutException(AWSClientError):
-	"""Raised if uploading an archive and Amazon Glacier times out while receiving the upload."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if uploading an archive and Amazon Glacier times out while receiving the upload."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class SerializationException(AWSClientError):
-	"""Raised if the body of the request is invalid. If including a JSON payload, check that it is well-formed."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if the body of the request is invalid. If including a JSON payload, check that it is well-formed."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class ServiceUnavailableException(AWSServerError):
-	"""Raised if the service cannot complete the request."""
-	def __init__(self, message):
-		AWSServerError.__init__(self, message)
+    """Raised if the service cannot complete the request."""
+    def __init__(self, message):
+        AWSServerError.__init__(self, message)
 
 
 class ThrottlingException(AWSClientError):
-	"""Raised if you need to reduce your rate of requests to Amazon Glacier."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if you need to reduce your rate of requests to Amazon Glacier."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 class UnrecognizedClientException(AWSClientError):
-	"""Raised if the Access Key ID or security token is invalid."""
-	def __init__(self, message):
-		AWSClientError.__init__(self, message)
+    """Raised if the Access Key ID or security token is invalid."""
+    def __init__(self, message):
+        AWSClientError.__init__(self, message)
 
 
 def raise_aws_error(error_type, code, message):
-	"""Raises a subclass of AWSError as appropriate for the given error parameters."""
-	if code == "AccessDeniedException": raise AccessDeniedException(message)
-	elif code == "BadRequest": raise BadRequest(message)
-	elif code == "ExpiredTokenException": raise ExpiredTokenException(message)
-	elif code == "InvalidParameterValueException": raise InvalidParameterValueException(message)
-	elif code == "InvalidSignatureException": raise InvalidSignatureException(message)
-	elif code == "LimitExceededException": raise LimitExceededException(message)
-	elif code == "MissingAuthenticationTokenException": raise MissingAuthenticationTokenException(message)
-	elif code == "MissingParameterValueException": raise MissingParameterValueException(message)
-	elif code == "ResourceNotFoundException": raise ResourceNotFoundException(message)
-	elif code == "RequestTimeoutException": raise RequestTimeoutException(message)
-	elif code == "SerializationException": raise SerializationException(message)
-	elif code == "ServiceUnavailableException": raise ServiceUnavailableException(message)
-	elif code == "ThrottlingException": raise ThrottlingException(message)
-	elif code == "UnrecognizedClientException": raise UnrecognizedClientException(message)
-	elif error_type == "Client": raise AWSClientError(message)
-	elif error_type == "Server": raise AWSServerError(message)
-	else: raise AWSUnknownError(message)
+    """Raises a subclass of AWSError as appropriate for the given error parameters."""
+    if code == "AccessDeniedException": raise AccessDeniedException(message)
+    elif code == "BadRequest": raise BadRequest(message)
+    elif code == "ExpiredTokenException": raise ExpiredTokenException(message)
+    elif code == "InvalidParameterValueException": raise InvalidParameterValueException(message)
+    elif code == "InvalidSignatureException": raise InvalidSignatureException(message)
+    elif code == "LimitExceededException": raise LimitExceededException(message)
+    elif code == "MissingAuthenticationTokenException": raise MissingAuthenticationTokenException(message)
+    elif code == "MissingParameterValueException": raise MissingParameterValueException(message)
+    elif code == "ResourceNotFoundException": raise ResourceNotFoundException(message)
+    elif code == "RequestTimeoutException": raise RequestTimeoutException(message)
+    elif code == "SerializationException": raise SerializationException(message)
+    elif code == "ServiceUnavailableException": raise ServiceUnavailableException(message)
+    elif code == "ThrottlingException": raise ThrottlingException(message)
+    elif code == "UnrecognizedClientException": raise UnrecognizedClientException(message)
+    elif error_type == "Client": raise AWSClientError(message)
+    elif error_type == "Server": raise AWSServerError(message)
+    else: raise AWSUnknownError(message)
 
 
 def issue_request(gi, method, path, query_params={}, headers={}, body=None, body_hash=None, response_headers_cb=None, response_body_cb=None):
-	"""Issues an HTTP request to Glacier.
+    """Issues an HTTP request to Glacier.
 
-	Arguments:
-	gi -- the global information structure
-	method -- the HTTP request method (one of GET, PUT, POST, or DELETE)
-	path -- the request URI excluding host and query string
-	query_params -- a dictionary of query parameters to attach at the end of the URI
-	headers -- a dictionary of HTTP request headers to add other than Date, Host, x-amz-glacier-version, and Content-Length (keys must be all lowercase)
-	body -- a byte object containing the request body if one is needed
-	body_hash -- the SHA256 of body (in binary form); if omitted, will be calculated internally
-	response_headers_cb -- a callback invoked with a list of (name, value) tuples when the response headers are available
-	response_body_cb -- a callback invoked once per megabyte or terminal fraction thereof of response body with the bytes object
+    Arguments:
+    gi -- the global information structure
+    method -- the HTTP request method (one of GET, PUT, POST, or DELETE)
+    path -- the request URI excluding host and query string
+    query_params -- a dictionary of query parameters to attach at the end of the URI
+    headers -- a dictionary of HTTP request headers to add other than Date, Host, x-amz-glacier-version, and Content-Length (keys must be all lowercase)
+    body -- a byte object containing the request body if one is needed
+    body_hash -- the SHA256 of body (in binary form); if omitted, will be calculated internally
+    response_headers_cb -- a callback invoked with a list of (name, value) tuples when the response headers are available
+    response_body_cb -- a callback invoked once per megabyte or terminal fraction thereof of response body with the bytes object
 
-	"""
-	global debug
+    """
+    global debug
 
-	# Issue the request up to 5 times, handling broken pipe errors and server-side AWS errors
-	retries = 5
-	while True:
-		try:
-			# Construct the URL
-			host = "glacier.{}.amazonaws.com".format(gi.region)
-			url = "http://{}{}?{}".format(host, path, urllib.parse.urlencode(query_params))
+    # Issue the request up to 5 times, handling broken pipe errors and server-side AWS errors
+    retries = 5
+    while True:
+        try:
+            # Construct the URL
+            host = "glacier.{}.amazonaws.com".format(gi.region)
+            url = "http://{}{}?{}".format(host, path, urllib.parse.urlencode(query_params))
 
-			# Grab a timestamp
-			stamp = datetime.datetime.now(datetime.timezone.utc)
+            # Grab a timestamp
+            stamp = datetime.datetime.now(datetime.timezone.utc)
 
-			# Add the standard request headers used in all requests
-			all_headers = copy.copy(headers)
-			all_headers["date"] = stamp.strftime("%Y%m%dT%H%M%SZ")
-			all_headers["host"] = host
-			all_headers["x-amz-glacier-version"] = "2012-06-01"
-			if body is not None:
-				all_headers["content-length"] = str(len(body))
+            # Add the standard request headers used in all requests
+            all_headers = copy.copy(headers)
+            all_headers["date"] = stamp.strftime("%Y%m%dT%H%M%SZ")
+            all_headers["host"] = host
+            all_headers["x-amz-glacier-version"] = "2012-06-01"
+            if body is not None:
+                all_headers["content-length"] = str(len(body))
 
-			# Construct the canonical query string (used in signature generation but not the request URL)
-			# This is unusual in that it uses %20 for spaces instead of +, so we must join the parameters manually instead of using urllib.parse.urlencode
-			canonical_query_string = "&".join(["{}={}".format(k, urllib.parse.quote(query_params[k], safe="~")) for k in sorted(query_params.keys())])
+            # Construct the canonical query string (used in signature generation but not the request URL)
+            # This is unusual in that it uses %20 for spaces instead of +, so we must join the parameters manually instead of using urllib.parse.urlencode
+            canonical_query_string = "&".join(["{}={}".format(k, urllib.parse.quote(query_params[k], safe="~")) for k in sorted(query_params.keys())])
 
-			# Construct the body hash if not provided externally
-			if body_hash is None:
-				body_hash = hashlib.sha256(body if body is not None else B"").digest()
-			
-			# Construct the canonical request string
-			header_names = sorted(all_headers.keys())
-			header_strings = ["{}:{}".format(k, all_headers[k]) for k in header_names]
-			canonical_request = "{}\n{}\n{}\n{}\n\n{}\n{}".format(method, path, canonical_query_string, "\n".join(header_strings), ";".join(header_names), to_hex_digest(body_hash))
-			if debug:
-				print("=== BEGIN CANONICAL REQUEST ===")
-				print(canonical_request)
-				print("=== END CANONICAL REQUEST ===")
+            # Construct the body hash if not provided externally
+            if body_hash is None:
+                body_hash = hashlib.sha256(body if body is not None else B"").digest()
+            
+            # Construct the canonical request string
+            header_names = sorted(all_headers.keys())
+            header_strings = ["{}:{}".format(k, all_headers[k]) for k in header_names]
+            canonical_request = "{}\n{}\n{}\n{}\n\n{}\n{}".format(method, path, canonical_query_string, "\n".join(header_strings), ";".join(header_names), to_hex_digest(body_hash))
+            if debug:
+                print("=== BEGIN CANONICAL REQUEST ===")
+                print(canonical_request)
+                print("=== END CANONICAL REQUEST ===")
 
-			# Construct the string to sign
-			credential_scope = "{}/{}/glacier/aws4_request".format(stamp.strftime("%Y%m%d"), gi.region)
-			string_to_sign = "\n".join(["AWS4-HMAC-SHA256", stamp.strftime("%Y%m%dT%H%M%SZ"), credential_scope, hashlib.sha256(canonical_request.encode("UTF-8")).hexdigest()])
+            # Construct the string to sign
+            credential_scope = "{}/{}/glacier/aws4_request".format(stamp.strftime("%Y%m%d"), gi.region)
+            string_to_sign = "\n".join(["AWS4-HMAC-SHA256", stamp.strftime("%Y%m%dT%H%M%SZ"), credential_scope, hashlib.sha256(canonical_request.encode("UTF-8")).hexdigest()])
 
-			# Derive the signing key
-			date_key = hmac.new(B"AWS4" + gi.secret_access_key.encode("UTF-8"), stamp.strftime("%Y%m%d").encode("UTF-8"), hashlib.sha256).digest()
-			region_key = hmac.new(date_key, gi.region.encode("UTF-8"), hashlib.sha256).digest()
-			service_key = hmac.new(region_key, B"glacier", hashlib.sha256).digest()
-			signing_key = hmac.new(service_key, B"aws4_request", hashlib.sha256).digest()
+            # Derive the signing key
+            date_key = hmac.new(B"AWS4" + gi.secret_access_key.encode("UTF-8"), stamp.strftime("%Y%m%d").encode("UTF-8"), hashlib.sha256).digest()
+            region_key = hmac.new(date_key, gi.region.encode("UTF-8"), hashlib.sha256).digest()
+            service_key = hmac.new(region_key, B"glacier", hashlib.sha256).digest()
+            signing_key = hmac.new(service_key, B"aws4_request", hashlib.sha256).digest()
 
-			# Sign the string and generate the Authorization header
-			signature = hmac.new(signing_key, string_to_sign.encode("UTF-8"), hashlib.sha256).hexdigest()
-			credential = "{}/{}".format(gi.access_key, credential_scope)
-			all_headers["authorization"] = "AWS4-HMAC-SHA256 Credential={},SignedHeaders={},Signature={}".format(credential, ";".join(header_names), signature)
+            # Sign the string and generate the Authorization header
+            signature = hmac.new(signing_key, string_to_sign.encode("UTF-8"), hashlib.sha256).hexdigest()
+            credential = "{}/{}".format(gi.access_key, credential_scope)
+            all_headers["authorization"] = "AWS4-HMAC-SHA256 Credential={},SignedHeaders={},Signature={}".format(credential, ";".join(header_names), signature)
 
-			# Combine all the headers
-			if debug:
-				print("=== BEGIN HEADERS ===")
-				for k, v in all_headers.items():
-					print("{}: {}".format(k, v))
-				print("=== END HEADERS ===")
+            # Combine all the headers
+            if debug:
+                print("=== BEGIN HEADERS ===")
+                for k, v in all_headers.items():
+                    print("{}: {}".format(k, v))
+                print("=== END HEADERS ===")
 
-			# Sanity-check method vs. body
-			if body is None:
-				assert method in ("GET", "DELETE")
-			else:
-				assert method in ("POST", "PUT")
+            # Sanity-check method vs. body
+            if body is None:
+                assert method in ("GET", "DELETE")
+            else:
+                assert method in ("POST", "PUT")
 
-			# Make the request
-			conn = http.client.HTTPConnection(host)
-			try:
-				conn.connect()
-				conn.request(method, url, body, all_headers)
-				resp = conn.getresponse()
-				if debug:
-					print("=== BEGIN RESPONSE STATUS LINE ===")
-					print(str(resp.status) + " " + resp.reason)
-					print("=== END RESPONSE STATUS LINE ===")
-					print("=== BEGIN RESPONSE HEADERS ===")
-					for k, v in resp.getheaders():
-						print("{}: {}".format(k, v))
-					print("=== END RESPONSE HEADERS ===")
-				if not (200 <= resp.status <= 299):
-					found = False
-					for k, v in resp.getheaders():
-						if k.lower() == "content-type" and v.lower() == "application/json":
-							found = True
-					response_body = resp.read()
-					response_body = json.loads(response_body.decode("UTF-8"))
-					if "code" in response_body and "message" in response_body and "type" in response_body:
-						raise_aws_error(error_type=response_body["type"], code=response_body["code"], message=response_body["message"])
-					else:
-						raise AWSError("Bad error response")
-				if response_headers_cb is not None:
-					response_headers_cb(resp.getheaders())
-				if response_body_cb is None:
-					response_body_cb = lambda x: None
-				while not resp.closed:
-					block = resp.read(1024 * 1024)
-					if len(block) == 0: break
-					response_body_cb(block)
-				return
-			finally:
-				conn.close()
-		except socket.error as exp:
-			if retries > 0:
-				print("Broken pipe, retrying.")
-				retries -= 1
-			else:
-				raise
-		except socket.gaierror as exp:
-			if retries > 0:
-				print("Name lookup error, retrying.")
-				retries -= 1
-			else:
-				raise
-		except AWSServerError as exp:
-			if retries > 0:
-				print("AWS server error ({}), retrying.".format(exp))
-				retries -= 1
-			else:
-				raise
-		except RequestTimeoutException as exp:
-			if retries > 0:
-				print("AWS upload timeout error, retrying.")
-				retries -= 1
-			else:
-				raise
+            # Make the request
+            conn = http.client.HTTPConnection(host)
+            try:
+                conn.connect()
+                conn.request(method, url, body, all_headers)
+                resp = conn.getresponse()
+                if debug:
+                    print("=== BEGIN RESPONSE STATUS LINE ===")
+                    print(str(resp.status) + " " + resp.reason)
+                    print("=== END RESPONSE STATUS LINE ===")
+                    print("=== BEGIN RESPONSE HEADERS ===")
+                    for k, v in resp.getheaders():
+                        print("{}: {}".format(k, v))
+                    print("=== END RESPONSE HEADERS ===")
+                if not (200 <= resp.status <= 299):
+                    found = False
+                    for k, v in resp.getheaders():
+                        if k.lower() == "content-type" and v.lower() == "application/json":
+                            found = True
+                    response_body = resp.read()
+                    response_body = json.loads(response_body.decode("UTF-8"))
+                    if "code" in response_body and "message" in response_body and "type" in response_body:
+                        raise_aws_error(error_type=response_body["type"], code=response_body["code"], message=response_body["message"])
+                    else:
+                        raise AWSError("Bad error response")
+                if response_headers_cb is not None:
+                    response_headers_cb(resp.getheaders())
+                if response_body_cb is None:
+                    response_body_cb = lambda x: None
+                while not resp.closed:
+                    block = resp.read(1024 * 1024)
+                    if len(block) == 0: break
+                    response_body_cb(block)
+                return
+            finally:
+                conn.close()
+        except socket.error as exp:
+            if retries > 0:
+                print("Broken pipe, retrying.")
+                retries -= 1
+            else:
+                raise
+        except socket.gaierror as exp:
+            if retries > 0:
+                print("Name lookup error, retrying.")
+                retries -= 1
+            else:
+                raise
+        except AWSServerError as exp:
+            if retries > 0:
+                print("AWS server error ({}), retrying.".format(exp))
+                retries -= 1
+            else:
+                raise
+        except RequestTimeoutException as exp:
+            if retries > 0:
+                print("AWS upload timeout error, retrying.")
+                retries -= 1
+            else:
+                raise
 
 
 def list_vaults(gi, verbose):
-	"""Lists all available vaults."""
-	marker = None
-	first = True
-	while first or (marker is not None):
-		first = False
-		qp = {}
-		if marker is not None:
-			qp["marker"] = marker
-		content_type = None
-		data = B""
-		def response_headers_cb(headers):
-			nonlocal content_type
-			for k, v in headers:
-				if k.lower() == "content-type":
-					content_type = v
-		def response_body_cb(block):
-			nonlocal data
-			data += block
-		issue_request(gi=gi, method="GET", path="/-/vaults", query_params=qp, response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
-		if content_type != "application/json":
-			print("Bad content type: got \"{}\", expected application/json!".format(content_type))
-			sys.exit(1)
-		data = data.decode("UTF-8")
-		if debug:
-			print("=== BEGIN RESPONSE BODY ===")
-			print(data)
-			print("=== END RESPONSE BODY ===")
-		data = json.loads(data)
-		marker = data["Marker"]
-		for vault in data["VaultList"]:
-			if verbose:
-				print("=== BEGIN VAULT INFO ===")
-				print("Name: {}".format(vault["VaultName"]))
-				print("ARN: {}".format(vault["VaultARN"]))
-				print("Created: {}".format(datetime.datetime.strptime(vault["CreationDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
-				print("Inventoried: {}".format(datetime.datetime.strptime(vault["LastInventoryDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc) if vault["LastInventoryDate"] is not None else "Never"))
-				print("Archives: {}".format(vault["NumberOfArchives"]))
-				print("Size: {} bytes".format(vault["SizeInBytes"]))
-				print("=== END VAULT INFO ===")
-			else:
-				print(vault["VaultName"])
+    """Lists all available vaults."""
+    marker = None
+    first = True
+    while first or (marker is not None):
+        first = False
+        qp = {}
+        if marker is not None:
+            qp["marker"] = marker
+        content_type = None
+        data = B""
+        def response_headers_cb(headers):
+            nonlocal content_type
+            for k, v in headers:
+                if k.lower() == "content-type":
+                    content_type = v
+        def response_body_cb(block):
+            nonlocal data
+            data += block
+        issue_request(gi=gi, method="GET", path="/-/vaults", query_params=qp, response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
+        if content_type != "application/json":
+            print("Bad content type: got \"{}\", expected application/json!".format(content_type))
+            sys.exit(1)
+        data = data.decode("UTF-8")
+        if debug:
+            print("=== BEGIN RESPONSE BODY ===")
+            print(data)
+            print("=== END RESPONSE BODY ===")
+        data = json.loads(data)
+        marker = data["Marker"]
+        for vault in data["VaultList"]:
+            if verbose:
+                print("=== BEGIN VAULT INFO ===")
+                print("Name: {}".format(vault["VaultName"]))
+                print("ARN: {}".format(vault["VaultARN"]))
+                print("Created: {}".format(datetime.datetime.strptime(vault["CreationDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
+                print("Inventoried: {}".format(datetime.datetime.strptime(vault["LastInventoryDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc) if vault["LastInventoryDate"] is not None else "Never"))
+                print("Archives: {}".format(vault["NumberOfArchives"]))
+                print("Size: {} bytes".format(vault["SizeInBytes"]))
+                print("=== END VAULT INFO ===")
+            else:
+                print(vault["VaultName"])
 
 
 def list_vaults_brief(gi, params):
-	"""Lists all available vaults with a short listing."""
-	return list_vaults(gi, False)
+    """Lists all available vaults with a short listing."""
+    return list_vaults(gi, False)
 
 
 def list_vaults_verbose(gi, params):
-	"""Lists all available vaults with a verbose listing."""
-	return list_vaults(gi, True)
+    """Lists all available vaults with a verbose listing."""
+    return list_vaults(gi, True)
 
 
 def create_vault(gi, params):
-	"""Creates a new vault."""
-	vault_name = params[0]
-	issue_request(gi=gi, method="PUT", path="/-/vaults/{}".format(vault_name), body=B"")
+    """Creates a new vault."""
+    vault_name = params[0]
+    issue_request(gi=gi, method="PUT", path="/-/vaults/{}".format(vault_name), body=B"")
 
 
 def delete_vault(gi, params):
-	"""Deletes a vault."""
-	vault_name = params[0]
-	issue_request(gi=gi, method="DELETE", path="/-/vaults/{}".format(vault_name))
+    """Deletes a vault."""
+    vault_name = params[0]
+    issue_request(gi=gi, method="DELETE", path="/-/vaults/{}".format(vault_name))
 
 
 def put_archive(gi, params):
-	"""Uploads an archive."""
-	# Extract shared parameters.
-	vault_name = params[0]
+    """Uploads an archive."""
+    # Extract shared parameters.
+    vault_name = params[0]
 
-	# Handle each upload request.
-	for i in range(1, len(params), 2):
-		# Extract per-archive parameters.
-		source_file_name = params[i]
-		description = params[i + 1] if len(params[i + 1]) > 0 else None
+    # Handle each upload request.
+    for i in range(1, len(params), 2):
+        # Extract per-archive parameters.
+        source_file_name = params[i]
+        description = params[i + 1] if len(params[i + 1]) > 0 else None
 
-		# Open the source file and do the upload.
-		if source_file_name == "-":
-			print("Uploading standard input…")
-			sys.stdin = sys.stdin.detach()
-			put_archive_stream(gi, vault_name, description, sys.stdin)
-		else:
-			print("Uploading file {}…".format(source_file_name))
-			with open(source_file_name, mode="rb") as source_file:
-				put_archive_stream(gi, vault_name, description, source_file)
+        # Open the source file and do the upload.
+        if source_file_name == "-":
+            print("Uploading standard input…")
+            sys.stdin = sys.stdin.detach()
+            put_archive_stream(gi, vault_name, description, sys.stdin)
+        else:
+            print("Uploading file {}…".format(source_file_name))
+            with open(source_file_name, mode="rb") as source_file:
+                put_archive_stream(gi, vault_name, description, source_file)
 
 
 def put_archive_stream(gi, vault_name, description, stream):
-	"""Uploads an archive with a file-like object."""
-	global upload_part_size
-	data_source = DataSource(stream, upload_part_size)
-	if data_source.is_empty():
-		print("This file is empty. Empty archives are not supported.")
-	elif data_source.is_single_part():
-		put_archive_single(gi, vault_name, description, data_source)
-	else:
-		put_archive_multi(gi, vault_name, description, data_source)
+    """Uploads an archive with a file-like object."""
+    global upload_part_size
+    data_source = DataSource(stream, upload_part_size)
+    if data_source.is_empty():
+        print("This file is empty. Empty archives are not supported.")
+    elif data_source.is_single_part():
+        put_archive_single(gi, vault_name, description, data_source)
+    else:
+        put_archive_multi(gi, vault_name, description, data_source)
 
 
 def put_archive_single(gi, vault_name, description, data_source):
-	"""Uploads an archive using single-part operation."""
-	block, tree_hash = data_source.__next__()
-	content_hash = hashlib.sha256(block).digest()
-	headers = {}
-	if description is not None:
-		headers["x-amz-archive-description"] = description
-	headers["x-amz-sha256-tree-hash"] = to_hex_digest(tree_hash)
-	headers["x-amz-content-sha256"] = to_hex_digest(content_hash)
-	archive_id = None
-	def response_headers_cb(headers):
-		nonlocal archive_id
-		for k, v in headers:
-			if k.lower() == "x-amz-archive-id":
-				archive_id = v
-	issue_request(gi=gi, method="POST", path="/-/vaults/{}/archives".format(vault_name), headers=headers, body=block, body_hash=content_hash, response_headers_cb=response_headers_cb)
-	print("Archive ID for {}: {}".format(description, archive_id))
+    """Uploads an archive using single-part operation."""
+    block, tree_hash = data_source.__next__()
+    content_hash = hashlib.sha256(block).digest()
+    headers = {}
+    if description is not None:
+        headers["x-amz-archive-description"] = description
+    headers["x-amz-sha256-tree-hash"] = to_hex_digest(tree_hash)
+    headers["x-amz-content-sha256"] = to_hex_digest(content_hash)
+    archive_id = None
+    def response_headers_cb(headers):
+        nonlocal archive_id
+        for k, v in headers:
+            if k.lower() == "x-amz-archive-id":
+                archive_id = v
+    issue_request(gi=gi, method="POST", path="/-/vaults/{}/archives".format(vault_name), headers=headers, body=block, body_hash=content_hash, response_headers_cb=response_headers_cb)
+    print("Archive ID for {}: {}".format(description, archive_id))
 
 
 def put_archive_multi(gi, vault_name, description, data_source):
-	"""Uploads an archive using multi-part operation."""
-	def initiate_multipart_upload():
-		nonlocal gi, vault_name, description
-		headers = {}
-		if description is not None:
-			headers["x-amz-archive-description"] = description
-		headers["x-amz-part-size"] = str(upload_part_size)
-		multipart_upload_id = None
-		def response_headers_cb(headers):
-			nonlocal multipart_upload_id
-			for k, v in headers:
-				if k.lower() == "x-amz-multipart-upload-id":
-					multipart_upload_id = v
-		issue_request(gi=gi, method="POST", path="/-/vaults/{}/multipart-uploads".format(vault_name), headers=headers, body=B"", response_headers_cb=response_headers_cb)
-		return multipart_upload_id
+    """Uploads an archive using multi-part operation."""
+    def initiate_multipart_upload():
+        nonlocal gi, vault_name, description
+        headers = {}
+        if description is not None:
+            headers["x-amz-archive-description"] = description
+        headers["x-amz-part-size"] = str(upload_part_size)
+        multipart_upload_id = None
+        def response_headers_cb(headers):
+            nonlocal multipart_upload_id
+            for k, v in headers:
+                if k.lower() == "x-amz-multipart-upload-id":
+                    multipart_upload_id = v
+        issue_request(gi=gi, method="POST", path="/-/vaults/{}/multipart-uploads".format(vault_name), headers=headers, body=B"", response_headers_cb=response_headers_cb)
+        return multipart_upload_id
 
-	def upload_part(multipart_upload_id, base_offset, part, tree_hash):
-		nonlocal gi, vault_name
-		part_hash = hashlib.sha256(part).digest()
-		headers = {
-			"content-range": "bytes {}-{}/*".format(base_offset, base_offset + len(part) - 1),
-			"x-amz-content-sha256": to_hex_digest(part_hash),
-			"x-amz-sha256-tree-hash": to_hex_digest(tree_hash)
-		}
-		issue_request(gi=gi, method="PUT", path="/-/vaults/{}/multipart-uploads/{}".format(vault_name, multipart_upload_id), headers=headers, body=part, body_hash=part_hash)
+    def upload_part(multipart_upload_id, base_offset, part, tree_hash):
+        nonlocal gi, vault_name
+        part_hash = hashlib.sha256(part).digest()
+        headers = {
+            "content-range": "bytes {}-{}/*".format(base_offset, base_offset + len(part) - 1),
+            "x-amz-content-sha256": to_hex_digest(part_hash),
+            "x-amz-sha256-tree-hash": to_hex_digest(tree_hash)
+        }
+        issue_request(gi=gi, method="PUT", path="/-/vaults/{}/multipart-uploads/{}".format(vault_name, multipart_upload_id), headers=headers, body=part, body_hash=part_hash)
 
-	def complete_multipart_upload(multipart_upload_id, total_size, tree_hash):
-		nonlocal gi, vault_name
-		headers = {
-			"x-amz-archive-size": str(total_size),
-			"x-amz-sha256-tree-hash": to_hex_digest(tree_hash)
-		}
-		archive_id = None
-		def response_headers_cb(headers):
-			nonlocal archive_id
-			for k, v in headers:
-				if k.lower() == "x-amz-archive-id":
-					archive_id = v
-		issue_request(gi=gi, method="POST", path="/-/vaults/{}/multipart-uploads/{}".format(vault_name, multipart_upload_id), headers=headers, body=B"", response_headers_cb=response_headers_cb)
-		return archive_id
+    def complete_multipart_upload(multipart_upload_id, total_size, tree_hash):
+        nonlocal gi, vault_name
+        headers = {
+            "x-amz-archive-size": str(total_size),
+            "x-amz-sha256-tree-hash": to_hex_digest(tree_hash)
+        }
+        archive_id = None
+        def response_headers_cb(headers):
+            nonlocal archive_id
+            for k, v in headers:
+                if k.lower() == "x-amz-archive-id":
+                    archive_id = v
+        issue_request(gi=gi, method="POST", path="/-/vaults/{}/multipart-uploads/{}".format(vault_name, multipart_upload_id), headers=headers, body=B"", response_headers_cb=response_headers_cb)
+        return archive_id
 
-	multipart_upload_id = initiate_multipart_upload()
-	tree_hashes = []
-	offset = 0
-	count = 0
-	try:
-		for part, tree_hash in data_source:
-			count += 1
-			print("\rUploading part {}...".format(count), end="")
-			upload_part(multipart_upload_id, offset, part, tree_hash)
-			tree_hashes.append(tree_hash)
-			offset += len(part)
-	finally:
-		print()
-	archive_id = complete_multipart_upload(multipart_upload_id, offset, collapse_tree_hash(tree_hashes))
-	print("Archive ID for {}: {}".format(description, archive_id))
+    multipart_upload_id = initiate_multipart_upload()
+    tree_hashes = []
+    offset = 0
+    count = 0
+    try:
+        for part, tree_hash in data_source:
+            count += 1
+            print("\rUploading part {}...".format(count), end="")
+            upload_part(multipart_upload_id, offset, part, tree_hash)
+            tree_hashes.append(tree_hash)
+            offset += len(part)
+    finally:
+        print()
+    archive_id = complete_multipart_upload(multipart_upload_id, offset, collapse_tree_hash(tree_hashes))
+    print("Archive ID for {}: {}".format(description, archive_id))
 
 
 def delete_archive(gi, params):
-	"""Deletes an archive from a vault."""
-	vault_name = params[0]
-	for archive_id in params[1:]:
-		issue_request(gi=gi, method="DELETE", path="/-/vaults/{}/archives/{}".format(vault_name, archive_id))
+    """Deletes an archive from a vault."""
+    vault_name = params[0]
+    for archive_id in params[1:]:
+        issue_request(gi=gi, method="DELETE", path="/-/vaults/{}/archives/{}".format(vault_name, archive_id))
 
 
 def start_inventory(gi, params):
-	"""Orders a vault inventory to be prepared."""
-	vault_name = params[0]
-	inventory_format = params[1]
-	job_description = params[2]
-	body = {
-		"Description": job_description,
-		"Format": inventory_format,
-		"Type": "inventory-retrieval",
-	}
-	body = json.dumps(body).encode("UTF-8")
-	if debug:
-		print("=== BEGIN REQUEST BODY ===")
-		print(body)
-		print("=== END REQUEST BODY ===")
-	job_id = ""
-	def response_headers_cb(headers):
-		nonlocal job_id
-		for k, v in headers:
-			if k.lower() == "x-amz-job-id":
-				job_id = v
-	issue_request(gi=gi, method="POST", path="/-/vaults/{}/jobs".format(vault_name), headers={"content-length": str(len(body))}, body=body, response_headers_cb=response_headers_cb)
-	print("Job ID: {}".format(job_id))
+    """Orders a vault inventory to be prepared."""
+    vault_name = params[0]
+    inventory_format = params[1]
+    job_description = params[2]
+    body = {
+        "Description": job_description,
+        "Format": inventory_format,
+        "Type": "inventory-retrieval",
+    }
+    body = json.dumps(body).encode("UTF-8")
+    if debug:
+        print("=== BEGIN REQUEST BODY ===")
+        print(body)
+        print("=== END REQUEST BODY ===")
+    job_id = ""
+    def response_headers_cb(headers):
+        nonlocal job_id
+        for k, v in headers:
+            if k.lower() == "x-amz-job-id":
+                job_id = v
+    issue_request(gi=gi, method="POST", path="/-/vaults/{}/jobs".format(vault_name), headers={"content-length": str(len(body))}, body=body, response_headers_cb=response_headers_cb)
+    print("Job ID: {}".format(job_id))
 
 
 def start_archive_download(gi, params):
-	"""Orders an archive to be prepared for download."""
-	vault_name = params[0]
-	archive_id = params[1]
-	job_description = params[2]
-	body = {
-		"ArchiveId": archive_id,
-		"Description": job_description,
-		"Type": "archive-retrieval",
-	}
-	body = json.dumps(body).encode("UTF-8")
-	if debug:
-		print("=== BEGIN REQUEST BODY ===")
-		print(body)
-		print("=== END REQUEST BODY ===")
-	job_id = ""
-	def response_headers_cb(headers):
-		nonlocal job_id
-		for k, v in headers:
-			if k.lower() == "x-amz-job-id":
-				job_id = v
-	issue_request(gi=gi, method="POST", path="/-/vaults/{}/jobs".format(vault_name), headers={"content-length": str(len(body))}, body=body, response_headers_cb=response_headers_cb)
-	print("Job ID: {}".format(job_id))
+    """Orders an archive to be prepared for download."""
+    vault_name = params[0]
+    archive_id = params[1]
+    job_description = params[2]
+    body = {
+        "ArchiveId": archive_id,
+        "Description": job_description,
+        "Type": "archive-retrieval",
+    }
+    body = json.dumps(body).encode("UTF-8")
+    if debug:
+        print("=== BEGIN REQUEST BODY ===")
+        print(body)
+        print("=== END REQUEST BODY ===")
+    job_id = ""
+    def response_headers_cb(headers):
+        nonlocal job_id
+        for k, v in headers:
+            if k.lower() == "x-amz-job-id":
+                job_id = v
+    issue_request(gi=gi, method="POST", path="/-/vaults/{}/jobs".format(vault_name), headers={"content-length": str(len(body))}, body=body, response_headers_cb=response_headers_cb)
+    print("Job ID: {}".format(job_id))
 
 
 def list_jobs(gi, params, verbose):
-	"""Lists the outstanding jobs for a vault."""
-	vault_name = params[0]
-	marker = None
-	first = True
-	while first or (marker is not None):
-		first = False
-		qp = {}
-		if marker is not None:
-			qp["marker"] = marker
-		content_type = None
-		data = B""
-		def response_headers_cb(headers):
-			nonlocal content_type
-			for k, v in headers:
-				if k.lower() == "content-type":
-					content_type = v
-		def response_body_cb(block):
-			nonlocal data
-			data += block
-		issue_request(gi=gi, method="GET", path="/-/vaults/{}/jobs".format(vault_name), query_params=qp, response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
-		if content_type.lower() != "application/json":
-			print("Bad content type: got \"{}\", expected application/json!".format(resp_headers["Content-Type"]))
-			sys.exit(1)
-		data = data.decode("UTF-8")
-		if debug:
-			print("=== BEGIN RESPONSE BODY ===")
-			print(data)
-			print("=== END RESPONSE BODY ===")
-		data = json.loads(data)
-		marker = data["Marker"]
-		for job in data["JobList"]:
-			if verbose:
-				print("=== BEGIN JOB INFO ===")
-				print("Description: {}".format(job["JobDescription"]))
-				print("Job ID: {}".format(job["JobId"]))
-				print("Action: {}".format(job["Action"]))
-				if job["Action"] == "ArchiveRetrieval":
-					print("Archive: {} ({} bytes)".format(job["ArchiveId"], job["ArchiveSizeInBytes"]))
-				elif job["Action"] == "InventoryRetrieval":
-					print("Size: {}".format(job["InventorySizeInBytes"]))
-				print("Started: {}".format(datetime.datetime.strptime(job["CreationDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
-				if "SizeInBytes" in job:
-					print("Size: {} bytes".format(job["SizeInBytes"]))
-				print("Status: {} ({})".format(job["StatusCode"], job["StatusMessage"]))
-				if job["Completed"]:
-					print("Completed: {}".format(datetime.datetime.strptime(job["CompletionDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
-				print("=== END JOB INFO ===")
-			else:
-				print("{}: {} ({})".format(job["JobDescription"], job["JobId"], job["StatusCode"]))
+    """Lists the outstanding jobs for a vault."""
+    vault_name = params[0]
+    marker = None
+    first = True
+    while first or (marker is not None):
+        first = False
+        qp = {}
+        if marker is not None:
+            qp["marker"] = marker
+        content_type = None
+        data = B""
+        def response_headers_cb(headers):
+            nonlocal content_type
+            for k, v in headers:
+                if k.lower() == "content-type":
+                    content_type = v
+        def response_body_cb(block):
+            nonlocal data
+            data += block
+        issue_request(gi=gi, method="GET", path="/-/vaults/{}/jobs".format(vault_name), query_params=qp, response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
+        if content_type.lower() != "application/json":
+            print("Bad content type: got \"{}\", expected application/json!".format(resp_headers["Content-Type"]))
+            sys.exit(1)
+        data = data.decode("UTF-8")
+        if debug:
+            print("=== BEGIN RESPONSE BODY ===")
+            print(data)
+            print("=== END RESPONSE BODY ===")
+        data = json.loads(data)
+        marker = data["Marker"]
+        for job in data["JobList"]:
+            if verbose:
+                print("=== BEGIN JOB INFO ===")
+                print("Description: {}".format(job["JobDescription"]))
+                print("Job ID: {}".format(job["JobId"]))
+                print("Action: {}".format(job["Action"]))
+                if job["Action"] == "ArchiveRetrieval":
+                    print("Archive: {} ({} bytes)".format(job["ArchiveId"], job["ArchiveSizeInBytes"]))
+                elif job["Action"] == "InventoryRetrieval":
+                    print("Size: {}".format(job["InventorySizeInBytes"]))
+                print("Started: {}".format(datetime.datetime.strptime(job["CreationDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
+                if "SizeInBytes" in job:
+                    print("Size: {} bytes".format(job["SizeInBytes"]))
+                print("Status: {} ({})".format(job["StatusCode"], job["StatusMessage"]))
+                if job["Completed"]:
+                    print("Completed: {}".format(datetime.datetime.strptime(job["CompletionDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
+                print("=== END JOB INFO ===")
+            else:
+                print("{}: {} ({})".format(job["JobDescription"], job["JobId"], job["StatusCode"]))
 
 
 def list_jobs_brief(gi, params):
-	"""Lists the outstanding jobs for a vault briefly."""
-	list_jobs(gi, params, False)
+    """Lists the outstanding jobs for a vault briefly."""
+    list_jobs(gi, params, False)
 
 
 def list_jobs_verbose(gi, params):
-	"""Lists the outstanding jobs for a vault verbosely."""
-	list_jobs(gi, params, True)
+    """Lists the outstanding jobs for a vault verbosely."""
+    list_jobs(gi, params, True)
 
 
 def get_job_output(gi, params):
-	"""Gets the output of a job."""
-	vault_name = params[0]
-	job_id = params[1]
-	with open(params[2], "wb") as output_file:
-		content_length = None
-		content_type = None
-		remote_tree_hash = None
-		local_tree_hash_parts = []
-		def response_headers_cb(headers):
-			nonlocal content_length, content_type, remote_tree_hash
-			for k, v in headers:
-				if k.lower() == "content-length":
-					content_length = int(v)
-				elif k.lower() == "content-type":
-					content_type = v
-				elif k.lower() == "x-amz-sha256-tree-hash":
-					remote_tree_hash = v
-		def response_body_cb(block):
-			nonlocal content_length, output_file, local_tree_hash_parts
-			output_file.write(block)
-			local_tree_hash_parts.append(hashlib.sha256(block).digest())
-			print("\rDownloaded {:n} / {:n} ({:.2%})".format(output_file.tell(), content_length, output_file.tell() / content_length), end="")
-			sys.stdout.flush()
-		try:
-			issue_request(gi=gi, method="GET", path="/-/vaults/{}/jobs/{}/output".format(vault_name, job_id), response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
-		finally:
-			print()
-		if content_type.lower() == "application/octet-stream":
-			local_tree_hash = to_hex_digest(collapse_tree_hash(local_tree_hash_parts))
-			if local_tree_hash != remote_tree_hash:
-				print("Tree hash mismatch; received {} but computed {}!".format(remote_tree_hash, local_tree_hash))
+    """Gets the output of a job."""
+    vault_name = params[0]
+    job_id = params[1]
+    with open(params[2], "wb") as output_file:
+        content_length = None
+        content_type = None
+        remote_tree_hash = None
+        local_tree_hash_parts = []
+        def response_headers_cb(headers):
+            nonlocal content_length, content_type, remote_tree_hash
+            for k, v in headers:
+                if k.lower() == "content-length":
+                    content_length = int(v)
+                elif k.lower() == "content-type":
+                    content_type = v
+                elif k.lower() == "x-amz-sha256-tree-hash":
+                    remote_tree_hash = v
+        def response_body_cb(block):
+            nonlocal content_length, output_file, local_tree_hash_parts
+            output_file.write(block)
+            local_tree_hash_parts.append(hashlib.sha256(block).digest())
+            print("\rDownloaded {:n} / {:n} ({:.2%})".format(output_file.tell(), content_length, output_file.tell() / content_length), end="")
+            sys.stdout.flush()
+        try:
+            issue_request(gi=gi, method="GET", path="/-/vaults/{}/jobs/{}/output".format(vault_name, job_id), response_headers_cb=response_headers_cb, response_body_cb=response_body_cb)
+        finally:
+            print()
+        if content_type.lower() == "application/octet-stream":
+            local_tree_hash = to_hex_digest(collapse_tree_hash(local_tree_hash_parts))
+            if local_tree_hash != remote_tree_hash:
+                print("Tree hash mismatch; received {} but computed {}!".format(remote_tree_hash, local_tree_hash))
 
 
 
 
 # The possible operations
 operations = {
-	"lsv": (0, list_vaults_brief),
-	"lsvl": (0, list_vaults_verbose),
-	"mkv": (1, create_vault),
-	"rmv": (1, delete_vault),
-	"put": (-1, put_archive),
-	"rm": (-2, delete_archive),
-	"inv": (3, start_inventory),
-	"dl": (3, start_archive_download),
-	"lsj": (1, list_jobs_brief),
-	"lsvj": (1, list_jobs_verbose),
-	"getj": (3, get_job_output),
+    "lsv": (0, list_vaults_brief),
+    "lsvl": (0, list_vaults_verbose),
+    "mkv": (1, create_vault),
+    "rmv": (1, delete_vault),
+    "put": (-1, put_archive),
+    "rm": (-2, delete_archive),
+    "inv": (3, start_inventory),
+    "dl": (3, start_archive_download),
+    "lsj": (1, list_jobs_brief),
+    "lsvj": (1, list_jobs_verbose),
+    "getj": (3, get_job_output),
 }
 
 # Extract common arguments
 if len(sys.argv) < 4:
-	usage()
+    usage()
 gi = GlobalInfo()
 gi.region = sys.argv[1]
 gi.access_key = sys.argv[2]
@@ -775,17 +775,17 @@ operation = sys.argv[3]
 
 # Handle individual operation
 if operation in operations:
-	op = operations[operation]
-	if op[0] >= 0:
-		if len(sys.argv) != 4 + op[0]:
-			usage()
-	elif operation == "rm":
-		if len(sys.argv) < (4 + 2):
-			usage()
-	elif operation == "put":
-		if len(sys.argv) < (4 + 3) or ((len(sys.argv) - 4 - 1) % 2) != 0:
-			usage()
-	gi.secret_access_key = getpass.getpass("Secret Access Key: ")
-	op[1](gi, sys.argv[4:])
+    op = operations[operation]
+    if op[0] >= 0:
+        if len(sys.argv) != 4 + op[0]:
+            usage()
+    elif operation == "rm":
+        if len(sys.argv) < (4 + 2):
+            usage()
+    elif operation == "put":
+        if len(sys.argv) < (4 + 3) or ((len(sys.argv) - 4 - 1) % 2) != 0:
+            usage()
+    gi.secret_access_key = getpass.getpass("Secret Access Key: ")
+    op[1](gi, sys.argv[4:])
 else:
-	usage()
+    usage()
