@@ -417,6 +417,10 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
                 raise
 
 
+def parse_datetime(date_string):
+    return datetime.datetime.fromtimestamp(datetime.datetime.strptime(date_string, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc).timestamp())
+
+
 def list_vaults(gi, verbose):
     """Lists all available vaults."""
     marker = None
@@ -452,8 +456,8 @@ def list_vaults(gi, verbose):
                 print("=== BEGIN VAULT INFO ===")
                 print("Name: {}".format(vault["VaultName"]))
                 print("ARN: {}".format(vault["VaultARN"]))
-                print("Created: {}".format(datetime.datetime.strptime(vault["CreationDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
-                print("Inventoried: {}".format(datetime.datetime.strptime(vault["LastInventoryDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc) if vault["LastInventoryDate"] is not None else "Never"))
+                print("Created: {}".format(parse_datetime(vault["CreationDate"])))
+                print("Inventoried: {}".format(parse_datetime(vault["LastInventoryDate"]) if vault["LastInventoryDate"] is not None else "Never"))
                 print("Archives: {}".format(vault["NumberOfArchives"]))
                 print("Size: {} bytes".format(vault["SizeInBytes"]))
                 print("=== END VAULT INFO ===")
@@ -693,12 +697,12 @@ def list_jobs(gi, params, verbose):
                     print("Archive: {} ({} bytes)".format(job["ArchiveId"], job["ArchiveSizeInBytes"]))
                 elif job["Action"] == "InventoryRetrieval":
                     print("Size: {}".format(job["InventorySizeInBytes"]))
-                print("Started: {}".format(datetime.datetime.strptime(job["CreationDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
+                print("Started: {}".format(parse_datetime(job["CreationDate"])))
                 if "SizeInBytes" in job:
                     print("Size: {} bytes".format(job["SizeInBytes"]))
                 print("Status: {} ({})".format(job["StatusCode"], job["StatusMessage"]))
                 if job["Completed"]:
-                    print("Completed: {}".format(datetime.datetime.strptime(job["CompletionDate"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=datetime.timezone.utc)))
+                    print("Completed: {}".format(parse_datetime(job["CompletionDate"])))
                 print("=== END JOB INFO ===")
             else:
                 print("{}: {} ({})".format(job["JobDescription"], job["JobId"], job["StatusCode"]))
