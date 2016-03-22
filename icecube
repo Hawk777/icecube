@@ -493,20 +493,19 @@ def put_archive(gi, params):
     vault_name = params[0]
 
     # Handle each upload request.
-    for i in range(1, len(params), 2):
+    for i in range(1, len(params)):
         # Extract per-archive parameters.
         source_file_name = params[i]
-        description = params[i + 1] if len(params[i + 1]) > 0 else None
 
         # Open the source file and do the upload.
         if source_file_name == "-":
             print("Uploading standard input…", flush=True)
             sys.stdin = sys.stdin.detach()
-            put_archive_stream(gi, vault_name, description, sys.stdin)
+            put_archive_stream(gi, vault_name, source_file_name, sys.stdin)
         else:
             print("Uploading file {}…".format(source_file_name), flush=True)
             with open(source_file_name, mode="rb") as source_file:
-                put_archive_stream(gi, vault_name, description, source_file)
+                put_archive_stream(gi, vault_name, source_file_name, source_file)
 
 
 def put_archive_stream(gi, vault_name, description, stream):
@@ -787,7 +786,7 @@ if operation in operations:
         if len(sys.argv) < (4 + 2):
             usage()
     elif operation == "put":
-        if len(sys.argv) < (4 + 3) or ((len(sys.argv) - 4 - 1) % 2) != 0:
+        if len(sys.argv) < (4 + 2):
             usage()
     gi.secret_access_key = getpass.getpass("Secret Access Key: ")
     op[1](gi, sys.argv[4:])
