@@ -297,8 +297,8 @@ def issue_request(gi, method, path, query_params={}, headers={}, body=None, body
     """
     global debug
 
-    # Issue the request up to 5 times, handling broken pipe errors and server-side AWS errors
-    retries = 5
+    # Issue the request up to 10 times, handling broken pipe errors and server-side AWS errors
+    retries = 10
     while True:
         try:
             # Construct the URL
