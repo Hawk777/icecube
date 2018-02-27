@@ -53,7 +53,7 @@ def usage():
     print("  lsvl: lists all vaults (verbose)")
     print("  mkv <vault-name>: creates a new vault")
     print("  rmv <vault-name>: deletes a vault, which must be empty and not have been written to since the last inventory")
-    print("  put <vault-name> <source-file> <archive-description> …: uploads one or more archives to a vault")
+    print("  put <vault-name> <source-file> …: uploads one or more archives to a vault")
     print("  rm <vault-name> <archive-id>…: deletes an archive from a vault")
     print("  inv <vault-name> {CSV|JSON} <job-description>: starts a job to download a vault inventory")
     print("  dl <vault-name> <archive-id> <job-description>: starts a job to download an archive")
