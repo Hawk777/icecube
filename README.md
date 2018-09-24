@@ -39,3 +39,9 @@ Usage
 =====
 
 Usage information is available by running `icecube` with no command-line parameters.
+
+License
+=======
+
+Icecube is © Christopher Head and is released under the GNU General Public
+License version 3.
